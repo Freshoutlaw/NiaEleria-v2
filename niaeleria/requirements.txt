@@ -1,0 +1,85 @@
+# ═══════════════════════════════════════════════════════
+# requirements.txt
+# NiaEleria full dependency list
+# "Dad, these are all my ingredients." — Nia
+# ═══════════════════════════════════════════════════════
+
+# ── Core framework ────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+
+# ── AI / LLM / Embeddings ─────────────────────────────
+sentence-transformers>=2.7.0
+# Supabase replaces SQLite + ChromaDB
+supabase>=2.5.0
+
+# ── Voice ─────────────────────────────────────────────
+SpeechRecognition>=3.10.0
+edge-tts>=6.1.12
+# pyaudio>=0.2.14
+# Optional high-quality offline STT:
+# faster-whisper>=1.0.0
+# Optional Porcupine wake word:
+# pvporcupine>=3.0.0
+
+# ── Cybersecurity / networking ────────────────────────
+psutil>=5.9.8
+scapy>=2.5.0
+paho-mqtt>=2.0.0
+
+# ── Web scraping / learning ───────────────────────────
+beautifulsoup4>=4.12.0
+youtube-transcript-api>=0.6.2
+
+# ── System tray ───────────────────────────────────────
+pystray>=0.19.5
+Pillow>=10.3.0
+
+# ── Utilities ─────────────────────────────────────────
+schedule>=1.2.2
+aiofiles>=23.2.1
+
+
+
+
+# Extra (for development):
+ ═══════════════════════════════════════════════════════════════════
+# NiaEleria — Windows audio stack install (no PyAudio)
+# Run these in your PowerShell from the project root, Dad.
+# ═══════════════════════════════════════════════════════════════════
+
+# 1. ElevenLabs TTS (primary voice)
+py -m pip install elevenlabs
+
+# 2. sounddevice — mic input (replaces PyAudio completely)
+py -m pip install sounddevice
+
+# 3. numpy — required by sounddevice
+py -m pip install numpy
+
+# 4. pydub — decodes ElevenLabs MP3 output for playback
+py -m pip install pydub
+
+# 5. SpeechRecognition — Google STT wrapper (no PyAudio backend needed now)
+py -m pip install SpeechRecognition
+
+# ── Optional but recommended ───────────────────────────────────────
+
+# Offline STT fallback (no internet needed, runs on CPU)
+py -m pip install faster-whisper
+
+# Better MP3 playback on Windows (pydub uses this under the hood)
+# Download ffmpeg: https://ffmpeg.org/download.html
+# Add ffmpeg/bin to your PATH, then pydub auto-detects it.
+#
+# Quick install via winget:
+winget install ffmpeg
+
+# ── Verify everything works ────────────────────────────────────────
+py -c "import sounddevice; print('sounddevice OK:', sounddevice.query_devices())"
+py -c "import elevenlabs; print('elevenlabs OK')"
+py -c "import speech_recognition; print('SpeechRecognition OK')"
+py -c "import pydub; print('pydub OK')"

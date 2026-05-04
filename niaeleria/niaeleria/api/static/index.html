@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NiaEleria</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --c:#00d4ff;--c2:#0066ff;--c3:#ff6600;--c4:#ff2244;
+  --dim:rgba(0,212,255,.08);--glow:0 0 20px rgba(0,212,255,.4);
+  --glow2:0 0 40px rgba(0,212,255,.15);
+}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;
+  font-family:'Courier New',monospace;color:var(--c);user-select:none}
+
+/* ── Canvas background ── */
+#bg{position:fixed;inset:0;z-index:0}
+
+/* ── Grid overlay ── */
+.grid-overlay{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(0,212,255,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.03) 1px,transparent 1px);
+  background-size:60px 60px;
+  animation:gridPulse 8s ease-in-out infinite}
+@keyframes gridPulse{0%,100%{opacity:.5}50%{opacity:1}}
+
+/* ── All HUD layers sit above bg ── */
+#hud{position:fixed;inset:0;z-index:2}
+
+/* ── Status ring (centre) ── */
+#status-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:220px;height:220px;pointer-events:none}
+.ring-svg{width:100%;height:100%;animation:ringRotate 20s linear infinite}
+@keyframes ringRotate{to{transform:rotate(360deg)}}
+.ring-inner-svg{width:100%;height:100%;position:absolute;inset:0;
+  animation:ringRotate 12s linear infinite reverse}
+#nia-core{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;gap:4px}
+#nia-name{font-size:13px;letter-spacing:6px;color:var(--c);
+  text-shadow:var(--glow);opacity:.9}
+#nia-state{font-size:10px;letter-spacing:3px;color:rgba(0,212,255,.5);
+  animation:stateBlink 3s ease-in-out infinite}
+@keyframes stateBlink{0%,100%{opacity:.4}50%{opacity:.9}}
+#voice-ring{width:80px;height:80px;border-radius:50%;
+  border:1.5px solid rgba(0,212,255,.3);
+  box-shadow:0 0 30px rgba(0,212,255,.2),inset 0 0 30px rgba(0,212,255,.05);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;transition:all .3s;cursor:pointer}
+#voice-ring:hover,#voice-ring.listening{
+  border-color:var(--c);
+  box-shadow:0 0 60px rgba(0,212,255,.5),inset 0 0 30px rgba(0,212,255,.1);
+}
+#voice-ring.speaking{border-color:var(--c3);
+  box-shadow:0 0 60px rgba(255,102,0,.5),inset 0 0 30px rgba(255,102,0,.1)}
+.mic-icon{width:24px;height:24px;opacity:.7;transition:opacity .3s}
+#voice-ring:hover .mic-icon,#voice-ring.listening .mic-icon{opacity:1}
+
+/* ── Voice bars (waveform) ── */
+#voice-bars{display:flex;align-items:center;gap:3px;height:32px;margin-top:6px}
+.vbar{width:3px;border-radius:2px;background:var(--c);
+  transform-origin:center bottom;opacity:.3;
+  animation:idle 2s ease-in-out infinite}
+.vbar:nth-child(odd){animation-delay:.3s}
+.vbar:nth-child(3n){animation-delay:.6s}
+@keyframes idle{0%,100%{height:4px;opacity:.2}50%{height:8px;opacity:.4}}
+.vbar.active{animation:waveActive .3s ease-in-out infinite alternate;opacity:.8}
+@keyframes waveActive{0%{height:4px}100%{height:28px}}
+.vbar.speak{animation:waveSpeaking .15s ease-in-out infinite alternate;opacity:1}
+@keyframes waveSpeaking{0%{height:6px}100%{height:26px}}
+
+/* ── Orbital panels ── */
+.orbital{position:absolute;pointer-events:none;opacity:0;
+  transition:opacity .6s ease,transform .6s ease}
+.orbital.visible{opacity:1;pointer-events:all}
+.panel-box{background:rgba(0,8,20,.85);
+  border:1px solid rgba(0,212,255,.2);
+  backdrop-filter:blur(12px);
+  padding:14px 18px;min-width:220px;
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));
+  box-shadow:0 0 30px rgba(0,212,255,.08),inset 0 0 30px rgba(0,212,255,.02)}
+.panel-label{font-size:9px;letter-spacing:3px;color:rgba(0,212,255,.5);
+  text-transform:uppercase;margin-bottom:10px;border-bottom:1px solid rgba(0,212,255,.1);
+  padding-bottom:6px}
+.panel-value{font-size:13px;color:var(--c);line-height:1.7}
+.panel-value span{color:rgba(255,255,255,.7)}
+
+/* ── Threat panel (right) ── */
+#panel-security{right:40px;top:50%;transform:translateY(-60%)}
+#panel-security.visible{transform:translateY(-50%)}
+
+/* ── Memory / Response panel (left) ── */
+#panel-response{left:40px;top:50%;transform:translateY(-60%);max-width:300px}
+#panel-response.visible{transform:translateY(-50%)}
+#response-text{font-size:13px;line-height:1.8;color:rgba(255,255,255,.85);
+  max-height:260px;overflow-y:auto;word-break:break-word}
+#response-text::-webkit-scrollbar{width:2px}
+#response-text::-webkit-scrollbar-thumb{background:rgba(0,212,255,.3)}
+
+/* ── System vitals (top) ── */
+#panel-vitals{top:30px;left:50%;transform:translateX(-50%);
+  display:flex;gap:30px;align-items:center}
+#panel-vitals.visible{transform:translateX(-50%)}
+.vital{display:flex;flex-direction:column;align-items:center;gap:4px}
+.vital-label{font-size:8px;letter-spacing:2px;color:rgba(0,212,255,.4);text-transform:uppercase}
+.vital-val{font-size:15px;font-weight:700;color:var(--c);text-shadow:var(--glow)}
+.vital-bar{width:60px;height:2px;background:rgba(0,212,255,.1);border-radius:1px;margin-top:2px}
+.vital-fill{height:100%;background:var(--c);border-radius:1px;transition:width .8s ease;
+  box-shadow:0 0 6px var(--c)}
+.vital-fill.warn{background:var(--c3)}
+.vital-fill.danger{background:var(--c4)}
+.vital-sep{width:1px;height:40px;background:rgba(0,212,255,.15)}
+
+/* ── Threat radar (right top) ── */
+#radar-container{position:absolute;right:40px;top:30px}
+#radar-container canvas{display:block}
+
+/* ── Data overlay (scheduled / reminders) ── */
+#panel-data{left:40px;top:30px;max-width:240px}
+.data-item{padding:6px 0;border-bottom:1px solid rgba(0,212,255,.07);
+  font-size:11px;color:rgba(0,212,255,.6);display:flex;justify-content:space-between}
+.data-item .dt{color:var(--c3);font-size:10px}
+
+/* ── Status bar (bottom) ── */
+#statusbar{position:absolute;bottom:0;left:0;right:0;height:36px;
+  background:rgba(0,0,0,.6);border-top:1px solid rgba(0,212,255,.1);
+  display:flex;align-items:center;padding:0 24px;gap:24px;font-size:10px;
+  letter-spacing:1.5px;color:rgba(0,212,255,.4)}
+.sb-item{display:flex;align-items:center;gap:8px}
+.sb-dot{width:6px;height:6px;border-radius:50%;background:var(--c);
+  box-shadow:0 0 6px var(--c);animation:sbPulse 2s ease-in-out infinite}
+.sb-dot.off{background:var(--c4);box-shadow:0 0 6px var(--c4);animation:none}
+.sb-dot.warn{background:var(--c3);box-shadow:0 0 6px var(--c3)}
+@keyframes sbPulse{0%,100%{opacity:.5}50%{opacity:1}}
+#time-display{margin-left:auto;font-size:13px;color:rgba(0,212,255,.7);letter-spacing:2px}
+
+/* ── Corner decorations ── */
+.corner{position:absolute;width:40px;height:40px;pointer-events:none}
+.corner.tl{top:10px;left:10px;border-top:1px solid rgba(0,212,255,.3);border-left:1px solid rgba(0,212,255,.3)}
+.corner.tr{top:10px;right:10px;border-top:1px solid rgba(0,212,255,.3);border-right:1px solid rgba(0,212,255,.3)}
+.corner.bl{bottom:46px;left:10px;border-bottom:1px solid rgba(0,212,255,.3);border-left:1px solid rgba(0,212,255,.3)}
+.corner.br{bottom:46px;right:10px;border-bottom:1px solid rgba(0,212,255,.3);border-right:1px solid rgba(0,212,255,.3)}
+
+/* ── Scan line ── */
+.scanline{position:fixed;inset:0;z-index:3;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);
+  animation:scan 8s linear infinite}
+@keyframes scan{0%{background-position:0 0}100%{background-position:0 100%}}
+
+/* ── Alert flash ── */
+#alert-flash{position:fixed;inset:0;z-index:10;pointer-events:none;
+  background:rgba(255,34,68,.04);opacity:0;transition:opacity .2s}
+#alert-flash.flash{opacity:1}
+
+/* ── Notification toast ── */
+#toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);
+  background:rgba(0,8,20,.9);border:1px solid rgba(0,212,255,.3);
+  padding:10px 24px;font-size:11px;letter-spacing:2px;
+  color:var(--c);opacity:0;pointer-events:none;z-index:20;
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));
+  transition:opacity .4s;text-align:center;max-width:500px;line-height:1.6}
+#toast.show{opacity:1}
+
+/* ── Kill switch indicator ── */
+#kill-indicator{position:absolute;right:40px;bottom:50px;
+  font-size:9px;letter-spacing:2px;color:rgba(255,34,68,.4);
+  cursor:pointer;transition:color .2s;padding:6px}
+#kill-indicator:hover{color:rgba(255,34,68,.8)}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+<div class="grid-overlay"></div>
+<div class="scanline"></div>
+<div id="alert-flash"></div>
+<div id="toast"></div>
+
+<div id="hud">
+  <!-- Corner decorations -->
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+
+  <!-- Vitals (always visible, top centre) -->
+  <div id="panel-vitals" class="orbital visible">
+    <div class="vital">
+      <div class="vital-label">Guard</div>
+      <div class="vital-val" id="v-guard">ARMED</div>
+      <div class="vital-bar"><div class="vital-fill" id="vf-guard" style="width:100%"></div></div>
+    </div>
+    <div class="vital-sep"></div>
+    <div class="vital">
+      <div class="vital-label">Network</div>
+      <div class="vital-val" id="v-net">GATE</div>
+      <div class="vital-bar"><div class="vital-fill warn" id="vf-net" style="width:60%"></div></div>
+    </div>
+    <div class="vital-sep"></div>
+    <div class="vital">
+      <div class="vital-label">Blocked</div>
+      <div class="vital-val" id="v-blocked">0</div>
+      <div class="vital-bar"><div class="vital-fill" id="vf-blocked" style="width:0%"></div></div>
+    </div>
+    <div class="vital-sep"></div>
+    <div class="vital">
+      <div class="vital-label">Threats</div>
+      <div class="vital-val" id="v-threats">0</div>
+      <div class="vital-bar"><div class="vital-fill danger" id="vf-threats" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- Threat radar (top right) -->
+  <div id="radar-container">
+    <canvas id="radar" width="120" height="120"></canvas>
+  </div>
+
+  <!-- Scheduled data (top left) -->
+  <div id="panel-data" class="orbital">
+    <div class="panel-box">
+      <div class="panel-label">Upcoming / Active</div>
+      <div id="data-list"></div>
+    </div>
+  </div>
+
+  <!-- Centre: Status ring + voice -->
+  <div id="status-ring">
+    <svg class="ring-svg" viewBox="0 0 220 220">
+      <circle cx="110" cy="110" r="105" fill="none" stroke="rgba(0,212,255,.12)" stroke-width="1"/>
+      <circle cx="110" cy="110" r="105" fill="none" stroke="rgba(0,212,255,.5)" stroke-width="1"
+        stroke-dasharray="80 580" stroke-linecap="round"/>
+      <circle cx="110" cy="110" r="105" fill="none" stroke="rgba(0,102,255,.3)" stroke-width="1"
+        stroke-dasharray="30 630" stroke-linecap="round" stroke-dashoffset="200"/>
+    </svg>
+    <svg class="ring-inner-svg" viewBox="0 0 220 220" style="position:absolute;inset:0;width:100%;height:100%">
+      <circle cx="110" cy="110" r="85" fill="none" stroke="rgba(0,212,255,.08)" stroke-width="1"/>
+      <circle cx="110" cy="110" r="85" fill="none" stroke="rgba(0,212,255,.25)" stroke-width="1"
+        stroke-dasharray="40 490" stroke-linecap="round"/>
+    </svg>
+
+    <div id="nia-core">
+      <div id="voice-ring" onclick="triggerVoice()" title="Click or say Hey Nia">
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="9" y="2" width="6" height="12" rx="3"/>
+          <path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="22" x2="12" y2="17"/>
+          <line x1="8" y1="22" x2="16" y2="22"/>
+        </svg>
+      </div>
+      <div id="voice-bars">
+        <div class="vbar" style="height:6px"></div><div class="vbar" style="height:10px"></div>
+        <div class="vbar" style="height:4px"></div><div class="vbar" style="height:14px"></div>
+        <div class="vbar" style="height:6px"></div><div class="vbar" style="height:8px"></div>
+        <div class="vbar" style="height:12px"></div><div class="vbar" style="height:5px"></div>
+        <div class="vbar" style="height:10px"></div>
+      </div>
+      <div id="nia-name">NIAELERIA</div>
+      <div id="nia-state">STANDBY</div>
+    </div>
+  </div>
+
+  <!-- Response panel (left, shown when Nia speaks) -->
+  <div id="panel-response" class="orbital">
+    <div class="panel-box" style="min-width:280px">
+      <div class="panel-label" id="resp-label">NIA · RESPONSE</div>
+      <div id="response-text"></div>
+    </div>
+  </div>
+
+  <!-- Security panel (right, shown on threats/status) -->
+  <div id="panel-security" class="orbital">
+    <div class="panel-box">
+      <div class="panel-label">Security · Active</div>
+      <div class="panel-value" id="sec-content"></div>
+    </div>
+  </div>
+
+  <!-- Kill switch indicator -->
+  <div id="kill-indicator" onclick="toggleKill()" title="Toggle kill switch">
+    ■ KILL SWITCH
+  </div>
+
+  <!-- Status bar -->
+  <div id="statusbar">
+    <div class="sb-item">
+      <div class="sb-dot" id="sb-ws"></div>
+      <span id="sb-ws-label">CONNECTING</span>
+    </div>
+    <div class="sb-item">
+      <div class="sb-dot" id="sb-guard"></div>
+      <span>CYBER GUARD</span>
+    </div>
+    <div class="sb-item">
+      <div class="sb-dot warn" id="sb-net"></div>
+      <span id="sb-net-label">NETWORK GATED</span>
+    </div>
+    <div class="sb-item">
+      <div class="sb-dot off" id="sb-voice"></div>
+      <span>VOICE</span>
+    </div>
+    <div id="time-display">--:--:--</div>
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────
+const BASE = `${location.origin}/api`;
+let ws, killActive=false, responseTimer=null, secTimer=null;
+
+// ── Background particle field ──────────────────────────────────
+(()=>{
+  const cv=document.getElementById('bg'),ctx=cv.getContext('2d');
+  let W,H,pts=[];
+  function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;pts=[];
+    for(let i=0;i<90;i++)pts.push({
+      x:Math.random()*W,y:Math.random()*H,
+      vx:(Math.random()-.5)*.15,vy:(Math.random()-.5)*.15,
+      r:Math.random()*1.5+.3,a:Math.random()
+    });
+  }
+  function draw(){
+    ctx.fillStyle='rgba(0,0,0,.04)';ctx.fillRect(0,0,W,H);
+    pts.forEach(p=>{
+      p.x=(p.x+p.vx+W)%W;p.y=(p.y+p.vy+H)%H;
+      p.a=.2+.3*Math.sin(Date.now()*.0005+p.x);
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(0,180,255,${p.a})`;ctx.fill();
+    });
+    pts.forEach((p,i)=>{pts.forEach((q,j)=>{if(j<=i)return;
+      const d=Math.hypot(p.x-q.x,p.y-q.y);
+      if(d<120){ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);
+        ctx.strokeStyle=`rgba(0,180,255,${.08*(1-d/120)})`;
+        ctx.lineWidth=.5;ctx.stroke();}
+    })});
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize',resize);resize();draw();
+})();
+
+// ── Radar ──────────────────────────────────────────────────────
+(()=>{
+  const cv=document.getElementById('radar'),ctx=cv.getContext('2d');
+  const cx=60,cy=60,r=55;let angle=0;
+  const blips=[];
+  window.addRadarBlip=function(intensity=1){
+    blips.push({a:Math.random()*Math.PI*2,d:Math.random()*.8*r+5,life:180,intensity});
+  };
+  function draw(){
+    ctx.clearRect(0,0,120,120);
+    // Rings
+    for(let i=1;i<=3;i++){
+      ctx.beginPath();ctx.arc(cx,cy,r*i/3,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(0,212,255,${.15-i*.03})`;ctx.lineWidth=.8;ctx.stroke();
+    }
+    // Cross hairs
+    ctx.strokeStyle='rgba(0,212,255,.12)';ctx.lineWidth=.5;
+    ctx.beginPath();ctx.moveTo(cx-r,cy);ctx.lineTo(cx+r,cy);
+    ctx.moveTo(cx,cy-r);ctx.lineTo(cx,cy+r);ctx.stroke();
+    // Sweep
+    const grad=ctx.createConicalGradient?.(cx,cy,0,angle,angle+Math.PI*.6)
+      ||ctx.createRadialGradient(cx,cy,0,cx,cy,r);
+    const sweep=ctx.createLinearGradient(cx,cy,cx+r,cy);
+    sweep.addColorStop(0,'rgba(0,212,255,.12)');
+    sweep.addColorStop(1,'rgba(0,212,255,0)');
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(angle);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,r,-.3,0);ctx.closePath();
+    ctx.fillStyle=sweep;ctx.fill();
+    ctx.restore();
+    angle=(angle+.02)%(Math.PI*2);
+    // Blips
+    for(let i=blips.length-1;i>=0;i--){
+      const b=blips[i];b.life--;
+      if(b.life<=0){blips.splice(i,1);continue;}
+      const bx=cx+Math.cos(b.a)*b.d,by=cy+Math.sin(b.a)*b.d;
+      ctx.beginPath();ctx.arc(bx,by,3,0,Math.PI*2);
+      ctx.fillStyle=b.intensity>0.7?`rgba(255,34,68,${b.life/180})`:`rgba(0,212,255,${b.life/180})`;
+      ctx.fill();
+      ctx.beginPath();ctx.arc(bx,by,6,0,Math.PI*2);
+      ctx.strokeStyle=b.intensity>0.7?`rgba(255,34,68,${b.life/360})`:`rgba(0,212,255,${b.life/360})`;
+      ctx.lineWidth=.8;ctx.stroke();
+    }
+    // Centre dot
+    ctx.beginPath();ctx.arc(cx,cy,2.5,0,Math.PI*2);
+    ctx.fillStyle='rgba(0,212,255,.8)';ctx.fill();
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ── Clock ──────────────────────────────────────────────────────
+function updateClock(){
+  const d=new Date();
+  document.getElementById('time-display').textContent=
+    d.toLocaleTimeString('en-GB',{hour12:false})+
+    ' · '+d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+}
+setInterval(updateClock,1000);updateClock();
+
+// ── Toast notification ─────────────────────────────────────────
+let toastTimer=null;
+function toast(msg,dur=4000){
+  const el=document.getElementById('toast');
+  el.innerHTML=msg;el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'),dur);
+}
+
+// ── Voice UI states ────────────────────────────────────────────
+function setVoiceState(state){
+  const ring=document.getElementById('voice-ring');
+  const bars=document.querySelectorAll('.vbar');
+  const st=document.getElementById('nia-state');
+  const sbv=document.getElementById('sb-voice');
+  ring.className='';
+  bars.forEach(b=>b.className='vbar');
+  if(state==='listening'){
+    ring.classList.add('listening');
+    bars.forEach((b,i)=>{b.classList.add('active');b.style.animationDelay=i*.05+'s';});
+    st.textContent='LISTENING';sbv.className='sb-dot';
+  } else if(state==='thinking'){
+    st.textContent='PROCESSING';sbv.className='sb-dot warn';
+    bars.forEach(b=>b.style.height='6px');
+  } else if(state==='speaking'){
+    ring.classList.add('speaking');
+    bars.forEach((b,i)=>{b.classList.add('speak');b.style.animationDelay=i*.04+'s';});
+    st.textContent='RESPONDING';sbv.className='sb-dot';
+    sbv.style.background='var(--c3)';sbv.style.boxShadow='0 0 6px var(--c3)';
+  } else {
+    st.textContent='STANDBY';sbv.className='sb-dot off';
+  }
+}
+
+// ── Show / hide orbital panels ─────────────────────────────────
+function showPanel(id,autoDismiss=0){
+  const el=document.getElementById(id);
+  el.classList.add('visible');
+  if(autoDismiss){
+    clearTimeout(el._timer);
+    el._timer=setTimeout(()=>el.classList.remove('visible'),autoDismiss);
+  }
+}
+function hidePanel(id){document.getElementById(id).classList.remove('visible')}
+
+// ── Nia speaks — show response panel ──────────────────────────
+function niaSpeak(text,label='NIA · RESPONSE'){
+  document.getElementById('resp-label').textContent=label;
+  const el=document.getElementById('response-text');
+  el.textContent='';
+  setVoiceState('speaking');
+  showPanel('panel-response');
+  // Type-writer effect
+  let i=0;
+  const iv=setInterval(()=>{
+    if(i<text.length){el.textContent+=text[i++];}
+    else{clearInterval(iv);
+      clearTimeout(responseTimer);
+      responseTimer=setTimeout(()=>{
+        hidePanel('panel-response');
+        setVoiceState('idle');
+      },8000);}
+  },18);
+}
+
+// ── Security panel ─────────────────────────────────────────────
+function showSecurityAlert(data){
+  const el=document.getElementById('sec-content');
+  if(Array.isArray(data)){
+    el.innerHTML=data.map(d=>`<div style="margin-bottom:6px">
+      <span style="color:${d.severity==='HIGH'?'#ff2244':d.severity==='MEDIUM'?'#ff6600':'#00d4ff'};
+        font-size:9px;letter-spacing:2px">${d.severity}</span>
+      <span style="color:rgba(255,255,255,.6);margin-left:8px">${d.action||''}</span>
+      ${d.target?`<div style="color:rgba(0,212,255,.4);font-size:10px;margin-top:2px">${d.target}</div>`:''}
+    </div>`).join('');
+  } else {
+    el.innerHTML=`<div>${data}</div>`;
+  }
+  showPanel('panel-security',10000);
+  addRadarBlip(1);
+  flashAlert();
+}
+
+function flashAlert(){
+  const f=document.getElementById('alert-flash');
+  f.classList.add('flash');
+  setTimeout(()=>f.classList.remove('flash'),400);
+}
+
+// ── Data panel ─────────────────────────────────────────────────
+function showDataPanel(items){
+  const el=document.getElementById('data-list');
+  el.innerHTML=items.map(it=>`
+    <div class="data-item">
+      <span>${it.name||it.label||it}</span>
+      <span class="dt">${it.time||it.next_run?.slice(11,16)||''}</span>
+    </div>`).join('');
+  showPanel('panel-data',15000);
+}
+
+// ── Status bar updates ─────────────────────────────────────────
+function updateStatusBar(status){
+  // Guard
+  const guardOk=status.guard_active!==false;
+  document.getElementById('sb-guard').className='sb-dot'+(guardOk?'':' off');
+  document.getElementById('v-guard').textContent=guardOk?'ARMED':'OFF';
+  document.getElementById('vf-guard').style.width=guardOk?'100%':'20%';
+  document.getElementById('vf-guard').className='vital-fill'+(guardOk?'':' danger');
+
+  // Network
+  const netOn=status.network_enabled===true;
+  document.getElementById('sb-net').className='sb-dot'+(netOn?'':' warn');
+  document.getElementById('sb-net-label').textContent=netOn?'NETWORK ON':'NETWORK GATED';
+  document.getElementById('v-net').textContent=netOn?'OPEN':'GATE';
+
+  // Blocked
+  const bl=(status.guard?.blocked_ips||[]).length;
+  document.getElementById('v-blocked').textContent=bl;
+  document.getElementById('vf-blocked').style.width=Math.min(bl*10,100)+'%';
+
+  // Kill
+  killActive=status.kill_switch;
+  const ki=document.getElementById('kill-indicator');
+  ki.style.color=killActive?'rgba(255,34,68,.9)':'rgba(255,34,68,.3)';
+
+  // Threats from audit
+  if(status.recent_threats>0){
+    document.getElementById('v-threats').textContent=status.recent_threats;
+    document.getElementById('vf-threats').style.width=Math.min(status.recent_threats*10,100)+'%';
+    for(let i=0;i<Math.min(status.recent_threats,3);i++)
+      setTimeout(()=>addRadarBlip(1),i*300);
+  }
+}
+
+// ── WebSocket ──────────────────────────────────────────────────
+function connectWS(){
+  ws=new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen=()=>{
+    document.getElementById('sb-ws').className='sb-dot';
+    document.getElementById('sb-ws-label').textContent='CONNECTED';
+    ws.send(JSON.stringify({type:'ping'}));
+  };
+  ws.onclose=()=>{
+    document.getElementById('sb-ws').className='sb-dot off';
+    document.getElementById('sb-ws-label').textContent='RECONNECTING';
+    setTimeout(connectWS,3000);
+  };
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.type==='pong'){
+      document.getElementById('sb-ws').className='sb-dot';
+    } else if(d.type==='nia_speak'){
+      // Nia proactively pushes speech to the UI
+      niaSpeak(d.text,d.label||'NIA · RESPONSE');
+    } else if(d.type==='security_alert'){
+      showSecurityAlert(d.data);
+    } else if(d.type==='show_data'){
+      showDataPanel(d.items);
+    } else if(d.type==='status_update'){
+      updateStatusBar(d.status);
+    } else if(d.type==='consent_request'){
+      handleConsent(d.message);
+    } else if(d.type==='thinking'){
+      setVoiceState('thinking');
+    } else if(d.type==='token'){
+      // streaming: ensure panel open
+      const el=document.getElementById('response-text');
+      if(!document.getElementById('panel-response').classList.contains('visible')){
+        setVoiceState('speaking');
+        showPanel('panel-response');
+        el.textContent='';
+      }
+      el.textContent+=d.text;
+    } else if(d.type==='done'){
+      setVoiceState('idle');
+      clearTimeout(responseTimer);
+      responseTimer=setTimeout(()=>{hidePanel('panel-response');},9000);
+    }
+  };
+}
+
+// ── Voice trigger (click the mic) ─────────────────────────────
+function triggerVoice(){
+  if(!ws||ws.readyState!==1){toast('DAD — CONNECTION OFFLINE');return;}
+  setVoiceState('listening');
+  // Signal the backend to start listening (backend handles STT)
+  ws.send(JSON.stringify({type:'voice_trigger'}));
+  toast('LISTENING, DAD...',3000);
+}
+
+// ── Consent ────────────────────────────────────────────────────
+function handleConsent(message){
+  // Show as a toast + full-screen prompt
+  const ans=confirm(`NIA REQUIRES APPROVAL, DAD\n\n${message}\n\nApprove?`);
+  ws.send(JSON.stringify({type:'consent_response',approved:ans}));
+  toast(ans?'APPROVED':'DENIED',2000);
+}
+
+// ── Kill switch ────────────────────────────────────────────────
+async function toggleKill(){
+  if(killActive){
+    await fetch(`${BASE}/security/kill`,{method:'DELETE'});
+    toast('KILL SWITCH CLEARED · RESUMING',3000);
+    killActive=false;
+  } else {
+    if(!confirm('DAD — Activate kill switch?\nAll Nia operations will halt.'))return;
+    await fetch(`${BASE}/security/kill`,{method:'POST'});
+    toast('⚠ KILL SWITCH ACTIVATED',3000);
+    killActive=true;
+    flashAlert();
+  }
+}
+
+// ── Poll security status ────────────────────────────────────────
+async function pollStatus(){
+  try{
+    const r=await fetch(`${BASE}/security/status`).then(r=>r.json());
+    const audit=await fetch(`${BASE}/security/audit?n=20`).then(r=>r.json()).catch(()=>({entries:[]}));
+    const highSev=(audit.entries||[]).filter(e=>e.severity==='HIGH'||e.severity==='CRITICAL');
+    updateStatusBar({...r,recent_threats:highSev.length});
+    if(highSev.length>0)showSecurityAlert(highSev.slice(0,4));
+  }catch{}
+}
+
+// ── Poll tasks ──────────────────────────────────────────────────
+async function pollTasks(){
+  try{
+    const tasks=await fetch(`${BASE}/automation/tasks`).then(r=>r.json()).catch(()=>[]);
+    if(tasks.length>0)showDataPanel(tasks.slice(0,5));
+  }catch{}
+}
+
+// ── Init ───────────────────────────────────────────────────────
+connectWS();
+pollStatus();
+pollTasks();
+setInterval(pollStatus,10000);
+setInterval(pollTasks,30000);
+
+// Ambient radar activity
+setInterval(()=>{if(Math.random()>.7)addRadarBlip(Math.random())},2000);
+
+// Ready greeting (simulated if WS not yet connected)
+setTimeout(()=>{
+  niaSpeak("All systems online, Dad. Cyber guard is armed. I'm watching the network. Say the word.", 'NIA · ONLINE');
+  addRadarBlip(.3);addRadarBlip(.4);
+},1200);
+</script>
+</body>
+</html>

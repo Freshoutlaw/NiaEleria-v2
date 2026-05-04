@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  niaeleria:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./flags:/app/flags
+    environment:
+      - ENV=production
+    restart: unless-stopped
+    network_mode: host   # for firewall & packet operations
